@@ -50,8 +50,6 @@ drone.on('open', error => {
             if (member.id !== drone.clientId) {
                 createVideoElement(member);
                 startWebRTC(true, member);
-            } else {
-                startWebRTC(false, member);
             }
         });
     });
@@ -60,9 +58,9 @@ drone.on('open', error => {
     room.on('member_join', member => {
         console.log("New member joined call:", member);
         createVideoElement(member);
+        startWebRTC(false, member);
     });
 });
-
 
 function createVideoElement(member) {
     const video = document.createElement("video");
@@ -85,7 +83,9 @@ function startWebRTC(isOfferer, member) {
     // If user is offerer let the 'negotiationneeded' event create the offer
     if (isOfferer) {
         pc.onnegotiationneeded = () => {
-            pc.createOffer().then(localDescCreated).catch(onError);
+            pc.createOffer().then(function (desc) {
+                return pc.setLocalDescription(desc, () => sendMessage({'sdp': pc.localDescription}), onError);
+            }).catch(onError);
         }
     }
 
@@ -120,7 +120,9 @@ function startWebRTC(isOfferer, member) {
             pc.setRemoteDescription(new RTCSessionDescription(message.sdp), () => {
                 // When receiving an offer lets answer it
                 if (pc.remoteDescription.type === 'offer') {
-                    pc.createAnswer().then(localDescCreated).catch(onError);
+                    pc.createAnswer().then(function (desc) {
+                        return pc.setLocalDescription(desc, () => sendMessage({'sdp': pc.localDescription}), onError);
+                    }).catch(onError);
                 }
             }, onError);
         } else if (message.candidate) {
@@ -130,12 +132,4 @@ function startWebRTC(isOfferer, member) {
             );
         }
     });
-}
-
-function localDescCreated(desc) {
-    pc.setLocalDescription(
-        desc,
-        () => sendMessage({'sdp': pc.localDescription}),
-        onError
-    );
 }
