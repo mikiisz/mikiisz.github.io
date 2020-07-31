@@ -1,141 +1,191 @@
-// Generate random room name
+// utils
+const logs = document.getElementById("logs");
+const input = document.getElementById("messageInput");
 
-'use strict';
-
-const startButton = document.getElementById('startButton');
-startButton.onclick = start;
-
-if (!location.hash) {
-    location.hash = Math.floor(Math.random() * 0xFFFFFF).toString(16);
+function log(message) {
+    logs.value += "[" + message.event + "] " + message.data + ": " + message.type + "\n";
 }
-const roomHash = location.hash.substring(1);
-const drone = new ScaleDrone('yiS12Ts5RdNhebyM');
-const roomName = 'observable-' + roomHash;
-const configuration = {
-    iceServers: [{
-        urls: 'stun:stun.l.google.com:19302'
-    }]
+
+// signaling server
+const peerConnections = [];
+const dataChannels = [];
+let myUuid = null;
+const conn = new WebSocket('ws://ec2-54-162-144-47.compute-1.amazonaws.com:8080//socket');
+
+conn.onopen = () => {
+    // todo: support other browsers
+    log({event: "WARNING", data: "Chrome only", type: "So sorry, JS is so stupid"});
+
+    const message = {event: "AUTH", data: "Connected to socket"};
+    console.log(message.data);
+    conn.send(JSON.stringify(message));
 };
-const localVideo = document.getElementById("localVideo");
-let room;
-let pc;
 
-function onSuccess() {
-}
+conn.onmessage = event => {
+    const message = JSON.parse(event.data);
+    console.log(event.data);
 
-function onError(error) {
-    console.error(error);
-}
-
-// Send signaling data via Scaledrone
-function sendMessage(message) {
-    drone.publish({
-        room: roomName,
-        message
-    });
-}
-
-function gotStream(stream) {
-    localVideo.srcObject = stream;
-    window.localStream = stream;
-}
-
-
-console.log('Requesting local stream');
-navigator.mediaDevices
-    .getUserMedia({
-        audio: true,
-        video: true
-    })
-    .then(gotStream)
-    .catch(e => console.log('getUserMedia() error: ', e));
-
-function start() {
-
-    console.log(window.localStream);
-
-    room = drone.subscribe(roomName);
-
-    // We're connected to the room and received an array of 'members'
-    room.on('members', members => {
-        console.log("Current members:", members);
-        // If we are the second user to connect to the room we will be creating the offer
-        members.forEach(member => {
-            if (member.id !== drone.clientId) {
-                createVideoElement(member);
-                startWebRTC(true, member);
-            }
-        });
-    });
-
-    // Event is emitted when a new member joins the room.
-    room.on('member_join', member => {
-        console.log("New member joined call:", member);
-        createVideoElement(member);
-        startWebRTC(false, member);
-    });
-}
-
-function createVideoElement(member) {
-    const video = document.createElement("video");
-    video.setAttribute("id", "remote" + member.id);
-    video.autoplay = true;
-    document.body.appendChild(video);
-    console.log("Created video element:", "remote" + member.id);
-}
-
-function startWebRTC(withOffering, member) {
-    pc = new RTCPeerConnection(configuration);
-
-    // 'onicecandidate' notifies us whenever an ICE agent needs to deliver a
-    // message to the other peer through the signaling server
-    pc.onicecandidate = event => {
-        if (event.candidate) {
-            sendMessage({'candidate': event.candidate});
-        }
-    };
-
-    // If user is offerer let the 'negotiationneeded' event create the offer
-    if (withOffering) {
-        pc.onnegotiationneeded = () => {
-            pc.createOffer().then(desc => {
-                return pc.setLocalDescription(desc, () => sendMessage({'sdp': pc.localDescription}), onError);
-            }).catch(onError);
-        }
+    switch (message.event) {
+        case "AUTH":
+            log(message);
+            myUuid = message.data;
+            break;
+        case "USER":
+            handleUsers(message);
+            break;
+        case "OFFER":
+            handleOffer(message);
+            break;
+        case "ANSWER":
+            handleAnswer(message);
+            break;
+        case "CANDIDATE":
+            handleCandidate(message);
+            break;
+        default:
+            log(message);
+            break;
     }
+};
 
-    // When a remote stream arrives display it in the #remoteVideo element
-    pc.ontrack = event => {
-        const stream = event.streams[0];
-        const remoteVideo = document.getElementById("remote" + member.id);
-        if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== stream.id) {
-            remoteVideo.srcObject = stream;
+// webRTC handling
+handleUsers = message => {
+    log(message);
+    switch (message.type) {
+        case "UP":
+            createRTC(message.data);
+            break;
+        case "DOWN":
+            removeRTC(message.data);
+            break;
+        case "CANDIDATE":
+            createRTC(message.data);
+            offerRTC(message.data);
+            break;
+        default:
+            break;
+    }
+};
+
+removeRTC = uuid => {
+    const message = {event: "RTC", data: "Removing RTC peer", type: uuid};
+    log(message);
+    delete peerConnections[uuid];
+    delete dataChannels[uuid];
+};
+
+createRTC = uuid => {
+    const message = {event: "RTC", data: "Creating RTC peer for new user", type: uuid};
+    log(message);
+    console.log(JSON.stringify(message));
+
+    const configuration = {
+        iceServers: [{
+            urls: 'stun:stun.l.google.com:19302'
+        }]
+    };
+
+    const peerConnection = new RTCPeerConnection(
+        configuration,
+        {
+            optional: [{
+                RtpDataChannels: true
+            }]
+        }
+    );
+
+    peerConnection.onicecandidate = event => {
+        if (event.candidate && peerConnection.connectionState !== "connected") {
+            const message = {event: "CANDIDATE", data: event.candidate, type: uuid};
+            conn.send(JSON.stringify(message));
         }
     };
 
-    window.localStream.getTracks().forEach(track => pc.addTrack(track, window.localStream));
+    peerConnection.connected = false;
 
-    // Listen to signaling data from Scaledrone
-    room.on('data', (message, client) => {
-        // Message was sent by us
-        if (client.id === drone.clientId) {
-            return;
-        }
+    const dataChannel = peerConnection.createDataChannel("dataChannel");
 
-        if (message.sdp) {
-            // This is called after receiving an offer or answer from another peer
-            pc.setRemoteDescription(new RTCSessionDescription(message.sdp), () => {
-                // When receiving an offer lets answer it
-                if (pc.remoteDescription.type === 'offer') {
-                    pc.createAnswer().then(desc => {
-                        return pc.setLocalDescription(desc, () => sendMessage({'sdp': pc.localDescription}), onError);
-                    }).catch(onError);
-                }
-            }, onError);
-        } else if (message.candidate) {
-            console.log(message);
-            // Add the new ICE candidate to our connections remote description
-            pc.addIceCandidate(new RTCIceCandidate(message.candidate), onSuccess, onError);
-        }
-    });
-}
+    dataChannel.onerror = function (error) {
+        const message = {event: "ERROR", data: error, type: uuid};
+        log(message);
+        conn.send(JSON.stringify(message));
+    };
+
+    dataChannel.onmessage = function (event) {
+        log({event: "MSG", data: uuid, type: event.data});
+    };
+
+    dataChannel.onclose = function () {
+        log({event: "DATA", data: "Data channel is closed", type: uuid});
+    };
+
+    dataChannels[uuid] = dataChannel;
+    peerConnections[uuid] = peerConnection;
+};
+
+handleOffer = message => {
+    const peerConnection = peerConnections[message.type];
+    const offer = message.data;
+
+    if (!peerConnection.connected && peerConnection.connectionState !== "connected") {
+
+        console.log("Handling offer from " + message.type);
+
+        peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        peerConnection.createAnswer(function (answer) {
+            peerConnection.setLocalDescription(answer);
+            const msg = {event: "ANSWER", data: answer, type: message.type};
+            conn.send(JSON.stringify(msg));
+        }, function (error) {
+            console.log(error);
+        });
+    }
+};
+
+offerRTC = uuid => {
+    const peerConnection = peerConnections[uuid];
+
+    if (!peerConnection.connected && peerConnection.connectionState !== "connected") {
+
+        console.log("Offering for " + uuid);
+        peerConnection.createOffer(function (offer) {
+            const message = {event: "OFFER", data: offer, type: uuid};
+            conn.send(JSON.stringify(message));
+            peerConnection.setLocalDescription(offer);
+        }, function (error) {
+            console.log(error);
+        });
+    }
+};
+
+handleCandidate = message => {
+    const candidate = message.data;
+    const peerConnection = peerConnections[message.type];
+
+    console.log("Handling candidate from " + message.type);
+    if (!peerConnection.connected && peerConnection.connectionState !== "connected") {
+        peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+};
+
+handleAnswer = message => {
+    const answer = message.data;
+    const peerConnection = peerConnections[message.type];
+
+    console.log("Handling answer from " + message.type);
+    if (!peerConnection.connected && peerConnection.connectionState !== "connected") {
+        peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        peerConnection.connected = true;
+        log({event: "INFO", data: "Connection established successfully", type: message.type});
+    }
+};
+
+sendMessage = () => {
+    log({event: "MSG", data: myUuid, type: input.value});
+    for (let uuid in dataChannels) {
+        console.log(uuid);
+        const dataChannel = dataChannels[uuid];
+        dataChannel.send(input.value);
+    }
+    input.value = "";
+};
