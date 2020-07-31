@@ -10,7 +10,7 @@ function log(message) {
 const peerConnections = [];
 const dataChannels = [];
 let myUuid = null;
-const conn = new WebSocket('ws://ec2-54-162-144-47.compute-1.amazonaws.com:8080//socket');
+const conn = new WebSocket('wss://ec2-54-162-144-47.compute-1.amazonaws.com:8080//socket');
 
 conn.onopen = () => {
     // todo: support other browsers
