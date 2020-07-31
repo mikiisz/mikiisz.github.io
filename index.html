@@ -1,45 +1,38 @@
-<!DOCTYPE html>
-<html>
+<html lang="UTF-8">
+
 <head>
-    <script type='text/javascript' src='https://cdn.scaledrone.com/scaledrone.min.js'></script>
-    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width">
-    <style>
-        body {
-            display: flex;
-            height: 100vh;
-            margin: 0;
-            align-items: center;
-            justify-content: center;
-            padding: 0 50px;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-
-        video {
-            max-width: calc(50% - 100px);
-            margin: 0 50px;
-            box-sizing: border-box;
-            border-radius: 2px;
-            padding: 0;
-            box-shadow: rgba(156, 172, 172, 0.2) 0px 2px 2px, rgba(156, 172, 172, 0.2) 0px 4px 4px, rgba(156, 172, 172, 0.2) 0px 8px 8px, rgba(156, 172, 172, 0.2) 0px 16px 16px, rgba(156, 172, 172, 0.2) 0px 32px 32px, rgba(156, 172, 172, 0.2) 0px 64px 64px;
-        }
-
-        .copy {
-            position: fixed;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 16px;
-            color: rgba(0, 0, 0, 0.5);
-        }
-    </style>
+    <title>WebRTC demo</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/js/bootstrap.min.js"></script>
 </head>
+<style>
+    button {
+        margin: 1em;
+    }
+
+    input {
+        margin-top: 1em;
+    }
+
+    #logs {
+        font-family: monospace;
+        width: 100%;
+        height: 50%;
+        resize: none;
+    }
+</style>
+
 <body>
-<button id="startButton">Start</button>
-<div class="copy">Send your URL to a friend to start a video call</div>
-<video id="localVideo" autoplay muted></video>
-<!--<video id="remoteVideo" autoplay></video>-->
-<script src="script.js"></script>
+
+<div>
+    <textarea readonly id="logs"></textarea>
+    <input id="messageInput" type="text" placeholder="message">
+    <button type="button" onclick='sendMessage()'>SEND</button>
+    <script src="client.js"></script>
+</div>
+
+
 </body>
+
 </html>
